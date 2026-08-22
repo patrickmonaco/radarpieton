@@ -681,49 +681,35 @@
         log('Notify AE02 trouvé ✓', 'info');
       }
 
-      // 3. Abonnement notifications AVANT les commandes
+      // 3. Abonnement notifications
       await notifChar.startNotifications();
       notifChar.addEventListener('characteristicvaluechanged', onData);
       log('Réception active ✓', 'info');
 
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 500));
 
-      // 4. Authentification A8 (HiLink) - obligatoire pour recevoir des données
-      const cmdA8 = buildCmd(0xA8, PASSWORD_HEX);
-      try {
-        await writeChar.writeValueWithoutResponse(cmdA8);
-        log('A8 (HiLink) envoyée ✓', 'info');
-      } catch(e) {
-        try { await writeChar.writeValue(cmdA8); } catch(e2) {}
-      }
-      await new Promise(r => setTimeout(r, 800));
-
-      // 5. Commandes Engineering + lecture paramètres
-      const sendCmd = async (cmd) => {
+      // 4. Authentification A8 + Engineering en une seule séquence
+      const sendCmd = async (cmd, label) => {
         try {
           await writeChar.writeValueWithoutResponse(cmd);
+          if (label) log(label + ' ✓', 'info');
         } catch(e) {
-          try { await writeChar.writeValue(cmd); } catch(e2) {}
+          try {
+            await writeChar.writeValue(cmd);
+            if (label) log(label + ' ✓', 'info');
+          } catch(e2) {
+            if (label) log(label + ' ignoré', '');
+          }
         }
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 500));
       };
 
-      await sendCmd(buildCmd(0xFF, [0x01, 0x00])); // enter config
-      log('Config ouverte ✓', 'info');
-
-      // Lecture des paramètres (seuils par gate)
-      try {
-        await writeChar.writeValueWithoutResponse(buildCmd(0x61, []));
-        log('Lecture paramètres envoyée ✓', 'info');
-      } catch(e) {
-        try { await writeChar.writeValue(buildCmd(0x61, [])); } catch(e2) {}
-      }
-      await new Promise(r => setTimeout(r, 1000));
-
-      await sendCmd(buildCmd(0x62, [0x01, 0x00])); // engineering ON
-      log('Engineering ON ✓', 'info');
-      await sendCmd(buildCmd(0xFE, []));            // exit config
-      log('Config fermée ✓', 'info');
+      await sendCmd(buildCmd(0xA8, PASSWORD_HEX), 'A8 HiLink');
+      await sendCmd(buildCmd(0xFF, [0x01, 0x00]), 'Enter config');
+      await sendCmd(buildCmd(0x61, []), 'Read params');
+      await new Promise(r => setTimeout(r, 600)); // attendre réponse 0x61
+      await sendCmd(buildCmd(0x62, [0x01, 0x00]), 'Engineering ON');
+      await sendCmd(buildCmd(0xFE, []), 'Exit config');
 
     } catch (err) {
       log('Erreur : ' + err.message, 'alert');
