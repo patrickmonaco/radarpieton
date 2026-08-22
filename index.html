@@ -537,6 +537,19 @@
   // Commande activation BLE notifications (0xA8) + password "HiLink"
   const PASSWORD_HEX = [0x48, 0x69, 0x4c, 0x69, 0x6e, 0x6b]; // "HiLink"
 
+  // ── Construction commandes protocole Hi-Link ─────────────
+  function buildCmd(cmd, data = []) {
+    const len = 2 + data.length;
+    const buf = [
+      0xFD, 0xFC, 0xFB, 0xFA,
+      len & 0xFF, (len >> 8) & 0xFF,
+      cmd, 0x00,
+      ...data,
+      0x04, 0x03, 0x02, 0x01
+    ];
+    return new Uint8Array(buf);
+  }
+
   // ── État ──────────────────────────────────────────────────
   let device    = null;
   let server    = null;
@@ -719,8 +732,8 @@
 
   // ── Traitement des données ────────────────────────────────
   // ── Paramètres gates ─────────────────────────────────────
-  const GATE_MIN = 2; // ignore gates 0 et 1 (< 1.5m)
-  const GATE_MAX = 6; // ignore gates > 4.5m
+  const GATE_MIN = 2;
+  const GATE_MAX = 6;
 
   let rawLogCount = 0;
 
