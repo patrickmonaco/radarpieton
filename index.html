@@ -401,6 +401,16 @@
 
     .gate-bar.active .gate-bar-fill { background: var(--danger); }
     .gate-bar.ignored .gate-bar-fill { background: var(--muted); opacity: 0.4; }
+
+    .gate-bar {
+      height: 50px;
+      background: var(--border);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Log */
     .log-container {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -740,9 +750,8 @@
   function onData(event) {
     const raw = new Uint8Array(event.target.value.buffer);
 
-    // Affiche les 3 premières trames brutes pour diagnostic
-    if (rawLogCount < 3) {
-      rawLogCount++;
+    // Affiche les 5 premières trames brutes
+    if (rawLogCount < 5) {
       const hex = Array.from(raw).map(b => b.toString(16).padStart(2,'0')).join(' ');
       log(`Trame (${raw.length}b): ${hex}`, 'info');
     }
@@ -751,14 +760,29 @@
     let offset = 0;
     if (raw[0] !== 0xF4 && raw[1] === 0xF4) offset = 1;
 
-    if (raw.length < offset + 12) return;
-    if (raw[offset]   !== 0xF4 || raw[offset+1] !== 0xF3 ||
-        raw[offset+2] !== 0xF2 || raw[offset+3] !== 0xF1) return;
+    if (raw.length < offset + 12) {
+      if (rawLogCount < 5) log(`Trame trop courte: ${raw.length}`, 'alert');
+      rawLogCount++;
+      return;
+    }
 
-    const type   = raw[offset + 6]; // 01 = normal, 02 = engineering
+    if (raw[offset]   !== 0xF4 || raw[offset+1] !== 0xF3 ||
+        raw[offset+2] !== 0xF2 || raw[offset+3] !== 0xF1) {
+      if (rawLogCount < 5) log(`Header invalide offset:${offset} [${raw[0].toString(16)},${raw[1].toString(16)}]`, 'alert');
+      rawLogCount++;
+      return;
+    }
+
+    const type   = raw[offset + 6];
     const statut = raw[offset + 8];
     const dist   = raw[offset + 9] | (raw[offset + 10] << 8);
     const signal = raw[offset + 11];
+
+    // Log toutes les 30 trames
+    if (rawLogCount % 30 === 0) {
+      log(`type:0x${type.toString(16)} statut:${statut} dist:${dist}cm sig:${signal}`, '');
+    }
+    rawLogCount++;
 
     // Mise à jour métriques globales
     metricDist.innerHTML = dist + '<span class="metric-unit">cm</span>';
