@@ -765,11 +765,13 @@
         const hex = Array.from(raw).map((b,i) => `[${i}]:${b.toString(16)}`).join(' ');
         log(`Réponse 0x61: ${hex}`, 'info');
 
-        // Essai positions standards (sans décalage)
-        if (raw.length >= 33) {
+        // Positions confirmées par analyse du log :
+        // raw[14..22] = moving sensitivity gates 0-8
+        // raw[23..31] = static sensitivity gates 0-8
+        if (raw.length >= 32) {
           for (let i = 0; i <= 8; i++) {
-            seuilsGatesMob[i] = raw[15 + i];
-            seuilsGatesSta[i] = raw[24 + i];
+            seuilsGatesMob[i] = raw[14 + i];
+            seuilsGatesSta[i] = raw[23 + i];
           }
           seuilsCharges = true;
           log(`Seuils mob: [${seuilsGatesMob.join(', ')}]`, 'info');
