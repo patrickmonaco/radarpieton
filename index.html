@@ -502,7 +502,16 @@
     </div>
   </div>
 
-  <!-- Seuil signal -->
+  <!-- Facteur seuil -->
+  <div class="threshold-container">
+    <div class="threshold-label">
+      Facteur seuil (×seuil radar)
+      <span id="facteurVal">×1.5</span>
+    </div>
+    <input type="range" id="facteurSlider" min="10" max="30" value="15" step="1">
+  </div>
+
+  <!-- Seuil signal (fallback si pas de seuils chargés) -->
   <div class="threshold-container">
     <div class="threshold-label">
       Seuil d'alerte
@@ -569,6 +578,7 @@
   // ── Paramètres ────────────────────────────────────────────
   let seuilSignal = 50;
   let distMin     = 230;
+  let facteurSeuil = 1.5; // doit dépasser 150% du seuil configuré
 
   // ── DOM ───────────────────────────────────────────────────
   const radarStatus   = document.getElementById('radarStatus');
@@ -587,6 +597,11 @@
   const logContainer  = document.getElementById('logContainer');
 
   // ── Sliders ───────────────────────────────────────────────
+  document.getElementById('facteurSlider').addEventListener('input', e => {
+    facteurSeuil = parseInt(e.target.value) / 10;
+    document.getElementById('facteurVal').textContent = '×' + facteurSeuil.toFixed(1);
+  });
+
   document.getElementById('thresholdSlider').addEventListener('input', e => {
     seuilSignal = parseInt(e.target.value);
     thresholdVal.textContent = seuilSignal;
@@ -838,9 +853,10 @@
         gatesStr.push(val);
 
         if (i >= GATE_MIN && i <= GATE_MAX) {
-          // Utilise le seuil du radar si disponible, sinon le slider
+          // Utilise le seuil du radar * facteur pour filtrer le bruit
+          // Facteur 1.5 = doit dépasser 150% du seuil configuré
           const seuil = seuilsCharges && seuilsGatesMob[i] !== null
-            ? seuilsGatesMob[i]
+            ? Math.round(seuilsGatesMob[i] * facteurSeuil)
             : seuilSignal;
 
           if (val > seuil) {
