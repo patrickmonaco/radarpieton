@@ -864,6 +864,9 @@
             if (val > gateMaxVal) {
               gateMaxVal = val;
               gateMax    = i;
+              if (rawLogCount % 10 === 0) {
+                log(`Gate ${i} déclenche: val=${val} seuil=${seuil}`, 'alert');
+              }
             }
           }
         }
