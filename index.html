@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Radar Piéton</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #12121a;
+      --border:    #1e1e2e;
+      --text:      #e8e8f0;
+      --muted:     #5a5a7a;
+      --accent:    #4af0b0;
+      --danger:    #ff4060;
+      --warn:      #ffb840;
+      --safe:      #4af0b0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      gap: 20px;
+    }
+
+    header {
+      text-align: center;
+      padding-top: 8px;
+    }
+
+    header h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    header p {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    /* Indicateur principal */
+    .radar-display {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      animation: none;
+    }
+
+    .radar-ring:nth-child(1) { width: 220px; height: 220px; }
+    .radar-ring:nth-child(2) { width: 160px; height: 160px; }
+    .radar-ring:nth-child(3) { width: 100px; height: 100px; }
+
+    .radar-center {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+    }
+
+    .radar-status {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 2.8rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--muted);
+      transition: color 0.2s;
+    }
+
+    .radar-status.alert  { color: var(--danger); }
+    .radar-status.detect { color: var(--warn);   }
+    .radar-status.ok     { color: var(--safe);   }
+
+    .radar-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* Pulse ring animation */
+    .pulse-ring {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      border: 2px solid var(--danger);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .pulse-ring.active {
+      animation: pulse 0.8s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0%   { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(1.4); opacity: 0;   }
+    }
+
+    /* Métriques */
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .metric-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .metric-unit {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* Barre de signal */
+    .signal-bar-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .signal-bar-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .signal-bar-track {
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .signal-bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 4px;
+      background: var(--safe);
+      transition: width 0.15s ease, background 0.15s;
+    }
+
+    .signal-bar-fill.high { background: var(--danger); }
+    .signal-bar-fill.mid  { background: var(--warn);   }
+
+    /* Seuil */
+    .threshold-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .threshold-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .threshold-label span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      outline: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    /* Distance min */
+    .distmin-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      width: 100%;
+      max-width: 320px;
+    }
+
+    .distmin-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .distmin-label span {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    /* Boutons */
+    .btn {
+      width: 100%;
+      max-width: 320px;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-connect {
+      background: var(--accent);
+      color: #0a0a0f;
+    }
+
+    .btn-disconnect {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Mute toggle */
+    .mute-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 320px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+
+    .mute-row label {
+      font-size: 0.8rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 24px;
+    }
+
+    .toggle input { display: none; }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      background: var(--border);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-track { background: var(--accent); }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.2s;
+      pointer-events: none;
+    }
+
+    .toggle input:checked ~ .toggle-thumb { transform: translateX(18px); }
+
+    /* Statut connexion */
+    .conn-status {
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .conn-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    .conn-dot.connected    { background: var(--safe); }
+    .conn-dot.connecting   { background: var(--warn); animation: blink 1s infinite; }
+    .conn-dot.disconnected { background: var(--muted); }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    /* Log */
+    .log-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      width: 100%;
+      max-width: 320px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .log-line {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .log-line.alert { color: var(--danger); }
+    .log-line.info  { color: var(--accent); }
+
+    footer {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      padding-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Radar Piéton</h1>
+    <p>LD2410C · BLE · Détection mouvement</p>
+  </header>
+
+  <!-- Indicateur radar -->
+  <div class="radar-display">
+    <div class="pulse-ring" id="pulseRing"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-ring"></div>
+    <div class="radar-center">
+      <div class="radar-status" id="radarStatus">---</div>
+      <div class="radar-label" id="radarLabel">en attente</div>
+    </div>
+  </div>
+
+  <!-- Statut connexion -->
+  <div class="conn-status">
+    <div class="conn-dot disconnected" id="connDot"></div>
+    <span id="connLabel">Non connecté</span>
+  </div>
+
+  <!-- Métriques -->
+  <div class="metrics">
+    <div class="metric-card">
+      <div class="metric-label">Distance</div>
+      <div class="metric-value" id="metricDist">--<span class="metric-unit">cm</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Signal</div>
+      <div class="metric-value" id="metricSig">--<span class="metric-unit"></span></div>
+    </div>
+  </div>
+
+  <!-- Barre signal -->
+  <div class="signal-bar-container">
+    <div class="signal-bar-label">Intensité signal mobile</div>
+    <div class="signal-bar-track">
+      <div class="signal-bar-fill" id="signalBar"></div>
+    </div>
+  </div>
+
+  <!-- Seuil signal -->
+  <div class="threshold-container">
+    <div class="threshold-label">
+      Seuil d'alerte
+      <span id="thresholdVal">50</span>
+    </div>
+    <input type="range" id="thresholdSlider" min="10" max="100" value="50">
+  </div>
+
+  <!-- Distance min -->
+  <div class="distmin-container">
+    <div class="distmin-label">
+      Distance minimum
+      <span id="distMinVal">230 cm</span>
+    </div>
+    <input type="range" id="distMinSlider" min="50" max="400" value="230" step="10">
+  </div>
+
+  <!-- Son on/off -->
+  <div class="mute-row">
+    <label>Alerte sonore</label>
+    <label class="toggle">
+      <input type="checkbox" id="soundToggle" checked>
+      <div class="toggle-track"></div>
+      <div class="toggle-thumb"></div>
+    </label>
+  </div>
+
+  <!-- Boutons -->
+  <button class="btn btn-connect" id="btnConnect">Se connecter au radar</button>
+  <button class="btn btn-disconnect" id="btnDisconnect" disabled>Déconnecter</button>
+
+  <!-- Log -->
+  <div class="log-container" id="logContainer"></div>
+
+  <footer>Chrome Android requis · HTTPS</footer>
+
+<script>
+  // ── UUIDs LD2410C confirmés via nRF Connect ────────────────
+  const SERVICE_UUID = '0000ae00-0000-1000-8000-00805f9b34fb';
+  const CHAR_WRITE   = '0000ae01-0000-1000-8000-00805f9b34fb'; // WRITE NO RESPONSE
+  const CHAR_NOTIFY  = '0000ae02-0000-1000-8000-00805f9b34fb'; // NOTIFY
+  const PASSWORD     = [0x48, 0x69, 0x4c, 0x69, 0x6e, 0x6b];  // "HiLink"
+
+  // ── État ──────────────────────────────────────────────────
+  let device    = null;
+  let server    = null;
+  let alertCooldown = false;
+  let audioCtx  = null;
+
+  // ── Paramètres ────────────────────────────────────────────
+  let seuilSignal = 50;
+  let distMin     = 230;
+
+  // ── DOM ───────────────────────────────────────────────────
+  const radarStatus   = document.getElementById('radarStatus');
+  const radarLabel    = document.getElementById('radarLabel');
+  const pulseRing     = document.getElementById('pulseRing');
+  const connDot       = document.getElementById('connDot');
+  const connLabel     = document.getElementById('connLabel');
+  const metricDist    = document.getElementById('metricDist');
+  const metricSig     = document.getElementById('metricSig');
+  const signalBar     = document.getElementById('signalBar');
+  const thresholdVal  = document.getElementById('thresholdVal');
+  const distMinVal    = document.getElementById('distMinVal');
+  const btnConnect    = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const soundToggle   = document.getElementById('soundToggle');
+  const logContainer  = document.getElementById('logContainer');
+
+  // ── Sliders ───────────────────────────────────────────────
+  document.getElementById('thresholdSlider').addEventListener('input', e => {
+    seuilSignal = parseInt(e.target.value);
+    thresholdVal.textContent = seuilSignal;
+  });
+
+  document.getElementById('distMinSlider').addEventListener('input', e => {
+    distMin = parseInt(e.target.value);
+    distMinVal.textContent = distMin + ' cm';
+  });
+
+  // ── Log ───────────────────────────────────────────────────
+  function log(msg, type = '') {
+    const now = new Date().toLocaleTimeString('fr-FR', { hour12: false });
+    const line = document.createElement('div');
+    line.className = 'log-line' + (type ? ' ' + type : '');
+    line.textContent = `[${now}] ${msg}`;
+    logContainer.appendChild(line);
+    logContainer.scrollTop = logContainer.scrollHeight;
+    // Limite à 50 lignes
+    while (logContainer.children.length > 50) {
+      logContainer.removeChild(logContainer.firstChild);
+    }
+  }
+
+  // ── Connexion ─────────────────────────────────────────────
+  function setConnStatus(status) {
+    connDot.className = 'conn-dot ' + status;
+    const labels = {
+      connected:    'Connecté · LD2410C',
+      connecting:   'Connexion...',
+      disconnected: 'Non connecté'
+    };
+    connLabel.textContent = labels[status] || status;
+  }
+
+  btnConnect.addEventListener('click', async () => {
+    if (!navigator.bluetooth) {
+      log('Web Bluetooth non supporté — utilisez Chrome', 'alert');
+      return;
+    }
+    try {
+      setConnStatus('connecting');
+      btnConnect.disabled = true;
+      log('Recherche du radar...', 'info');
+
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: 'HLK-LD2410' }],
+        optionalServices: [SERVICE_UUID]
+      });
+
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+
+      server = await device.gatt.connect();
+      log('GATT connecté', 'info');
+
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      log('Service AE00 trouvé ✓', 'info');
+
+      // Authentification via AE01 (WRITE NO RESPONSE)
+      try {
+        const writeChar = await service.getCharacteristic(CHAR_WRITE);
+        await writeChar.writeValueWithoutResponse(new Uint8Array(PASSWORD));
+        log('Authentifié (HiLink)', 'info');
+      } catch (e) {
+        log('Auth ignorée : ' + e.message, '');
+      }
+
+      // Abonnement notifications via AE02
+      const notifChar = await service.getCharacteristic(CHAR_NOTIFY);
+      await notifChar.startNotifications();
+      notifChar.addEventListener('characteristicvaluechanged', onData);
+
+      setConnStatus('connected');
+      btnDisconnect.disabled = false;
+      btnConnect.disabled    = true;
+      log('Réception active sur AE02 ✓', 'info');
+
+    } catch (err) {
+      log('Erreur : ' + err.message, 'alert');
+      setConnStatus('disconnected');
+      btnConnect.disabled = false;
+    }
+  });
+
+  btnDisconnect.addEventListener('click', () => {
+    if (device && device.gatt.connected) {
+      device.gatt.disconnect();
+    }
+  });
+
+  function onDisconnected() {
+    setConnStatus('disconnected');
+    btnConnect.disabled    = false;
+    btnDisconnect.disabled = true;
+    resetDisplay();
+    log('Déconnecté', 'alert');
+  }
+
+  // ── Traitement des données ────────────────────────────────
+  function onData(event) {
+    const data = new Uint8Array(event.target.value.buffer);
+
+    // Vérifie le header F4 F3 F2 F1
+    if (data.length < 12) return;
+    if (data[0] !== 0xF4 || data[1] !== 0xF3 ||
+        data[2] !== 0xF2 || data[3] !== 0xF1) return;
+
+    const statut = data[8];
+    const dist   = data[9] | (data[10] << 8); // little endian
+    const signal = data[11];
+
+    // Mise à jour métriques
+    metricDist.innerHTML = dist + '<span class="metric-unit">cm</span>';
+    metricSig.innerHTML  = signal + '<span class="metric-unit"></span>';
+
+    // Barre de signal
+    const pct = Math.min(signal, 100);
+    signalBar.style.width = pct + '%';
+    signalBar.className   = 'signal-bar-fill' +
+      (pct > 70 ? ' high' : pct > 40 ? ' mid' : '');
+
+    // Détection mouvement
+    const mouvement = (statut === 1 || statut === 3) &&
+                       dist   > distMin              &&
+                       signal > seuilSignal;
+
+    if (mouvement) {
+      radarStatus.textContent = dist;
+      radarStatus.className   = 'radar-status alert';
+      radarLabel.textContent  = 'ALERTE MOUVEMENT';
+      pulseRing.className     = 'pulse-ring active';
+
+      if (!alertCooldown) {
+        alertCooldown = true;
+        if (soundToggle.checked) jouerBip();
+        log(`⚠ ALERTE — dist: ${dist}cm signal: ${signal}`, 'alert');
+        setTimeout(() => { alertCooldown = false; }, 3000);
+      }
+    } else {
+      radarStatus.textContent = dist > 0 ? dist : '---';
+      radarStatus.className   = 'radar-status' + (dist > 0 ? ' ok' : '');
+      radarLabel.textContent  = dist > 0 ? 'en surveillance' : 'rien détecté';
+      pulseRing.className     = 'pulse-ring';
+    }
+  }
+
+  // ── Son ──────────────────────────────────────────────────
+  function jouerBip() {
+    try {
+      if (!audioCtx) audioCtx = new AudioContext();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const bips = [880, 1100, 880];
+      bips.forEach((freq, i) => {
+        const osc  = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        const t = audioCtx.currentTime + i * 0.18;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.4, t + 0.02);
+        gain.gain.linearRampToValueAtTime(0, t + 0.15);
+        osc.start(t);
+        osc.stop(t + 0.15);
+      });
+    } catch (e) {
+      console.warn('Audio error:', e);
+    }
+  }
+
+  // ── Reset ─────────────────────────────────────────────────
+  function resetDisplay() {
+    radarStatus.textContent = '---';
+    radarStatus.className   = 'radar-status';
+    radarLabel.textContent  = 'en attente';
+    pulseRing.className     = 'pulse-ring';
+    metricDist.innerHTML    = '--<span class="metric-unit">cm</span>';
+    metricSig.innerHTML     = '--';
+    signalBar.style.width   = '0%';
+  }
+
+  // Initialisation
+  log('Application prête — Chrome requis pour BLE', 'info');
+  log(`Seuil signal: ${seuilSignal} | Dist min: ${distMin}cm`, '');
+</script>
+</body>
+</html>
