@@ -738,8 +738,8 @@
 
   // ── Traitement des données ────────────────────────────────
   // ── Paramètres gates ─────────────────────────────────────
-  const GATE_MIN = 2;
-  const GATE_MAX = 6;
+  const GATE_MIN = 2; // ignore gates 0 et 1 (< 1.5m)
+  const GATE_MAX = 8; // inclut gates 7 et 8 (jusqu'à 6m)
 
   let rawLogCount = 0;
 
@@ -926,7 +926,7 @@
 
   // Initialisation
   log('Application prête — Chrome requis pour BLE', 'info');
-  log(`Gates actives: ${GATE_MIN} à ${GATE_MAX}`, '');
+  log(`Gates actives: ${GATE_MIN} à ${GATE_MAX} (${GATE_MIN*0.75}m à ${GATE_MAX*0.75}m)`, '');
 </script>
 </body>
 </html>
