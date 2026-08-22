@@ -383,7 +383,24 @@
       50%       { opacity: 0.2; }
     }
 
-    /* Log */
+    .gate-bar {
+      height: 40px;
+      background: var(--border);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .gate-bar-fill {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      background: var(--safe);
+      transition: height 0.15s;
+    }
+
+    .gate-bar.active .gate-bar-fill { background: var(--danger); }
+    .gate-bar.ignored .gate-bar-fill { background: var(--muted); opacity: 0.4; }
     .log-container {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -450,11 +467,28 @@
     </div>
   </div>
 
-  <!-- Barre signal -->
+  <!-- Barre de signal -->
   <div class="signal-bar-container">
-    <div class="signal-bar-label">Intensité signal mobile</div>
+    <div class="signal-bar-label">Intensité signal mobile global</div>
     <div class="signal-bar-track">
       <div class="signal-bar-fill" id="signalBar"></div>
+    </div>
+  </div>
+
+  <!-- Gates Engineering -->
+  <div class="signal-bar-container" id="gatesContainer" style="display:none">
+    <div class="signal-bar-label">Énergie par gate (mode Engineering)</div>
+    <div id="gatesDisplay" style="display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px">
+      <span style="font-size:0.6rem;color:var(--muted)">0</span>
+      <span style="font-size:0.6rem;color:var(--muted)">1</span>
+      <span style="font-size:0.6rem;color:var(--muted)">2</span>
+      <span style="font-size:0.6rem;color:var(--muted)">3</span>
+      <span style="font-size:0.6rem;color:var(--muted)">4</span>
+      <span style="font-size:0.6rem;color:var(--muted)">5</span>
+      <span style="font-size:0.6rem;color:var(--muted)">6</span>
+      <span style="font-size:0.6rem;color:var(--muted)">7</span>
+      <span style="font-size:0.6rem;color:var(--muted)">8</span>
     </div>
   </div>
 
@@ -630,7 +664,6 @@
       log('Notifications activées ✓', 'info');
 
       // Commande 0xA8 = activation BLE notify avec password HiLink
-      // Format : FD FC FB FA [len_lo] [len_hi] [cmd] 00 [data...] 04 03 02 01
       const cmdA8 = buildCmd(0xA8, PASSWORD_HEX);
       try {
         await writeChar.writeValueWithoutResponse(cmdA8);
@@ -643,6 +676,25 @@
           log('Commande A8 ignorée : ' + e2.message, '');
         }
       }
+
+      await new Promise(r => setTimeout(r, 500));
+
+      // Activation mode Engineering
+      const cmds = [
+        buildCmd(0xFF, [0x01, 0x00]), // enter config
+        buildCmd(0x62, [0x01, 0x00]), // start engineering mode
+        buildCmd(0xFE, []),           // exit config
+      ];
+
+      for (const cmd of cmds) {
+        try {
+          await writeChar.writeValueWithoutResponse(cmd);
+        } catch(e) {
+          try { await writeChar.writeValue(cmd); } catch(e2) {}
+        }
+        await new Promise(r => setTimeout(r, 300));
+      }
+      log('Mode Engineering activé ✓', 'info');
 
     } catch (err) {
       log('Erreur : ' + err.message, 'alert');
@@ -666,23 +718,14 @@
   }
 
   // ── Traitement des données ────────────────────────────────
-  // ── Construction commandes protocole Hi-Link ─────────────
-  function buildCmd(cmd, data = []) {
-    const len = 2 + data.length;
-    const buf = [
-      0xFD, 0xFC, 0xFB, 0xFA,  // header config
-      len & 0xFF, (len >> 8) & 0xFF, // longueur
-      cmd, 0x00,                // commande
-      ...data,                  // données
-      0x04, 0x03, 0x02, 0x01   // footer config
-    ];
-    return new Uint8Array(buf);
-  }
+  // ── Paramètres gates ─────────────────────────────────────
+  const GATE_MIN = 2; // ignore gates 0 et 1 (< 1.5m)
+  const GATE_MAX = 6; // ignore gates > 4.5m
 
   let rawLogCount = 0;
 
   function onData(event) {
-    const raw  = new Uint8Array(event.target.value.buffer);
+    const raw = new Uint8Array(event.target.value.buffer);
 
     // Affiche les 3 premières trames brutes pour diagnostic
     if (rawLogCount < 3) {
@@ -691,43 +734,76 @@
       log(`Trame (${raw.length}b): ${hex}`, 'info');
     }
 
-    // Le buffer BLE est décalé d'1 octet par rapport à l'UART
-    // buf[0] = longueur, buf[1..] = trame F4 F3 F2 F1 ...
-    // OU la trame commence directement par F4 selon le firmware
-
-    let data = raw;
+    // Détecte le décalage d'1 octet
     let offset = 0;
+    if (raw[0] !== 0xF4 && raw[1] === 0xF4) offset = 1;
 
-    // Détecte si le premier octet est la longueur (pas F4)
-    if (raw[0] !== 0xF4 && raw[1] === 0xF4) {
-      offset = 1; // buffer décalé d'1 octet
-    }
-
-    // Vérifie le header F4 F3 F2 F1
     if (raw.length < offset + 12) return;
     if (raw[offset]   !== 0xF4 || raw[offset+1] !== 0xF3 ||
         raw[offset+2] !== 0xF2 || raw[offset+3] !== 0xF1) return;
 
+    const type   = raw[offset + 6]; // 01 = normal, 02 = engineering
     const statut = raw[offset + 8];
     const dist   = raw[offset + 9] | (raw[offset + 10] << 8);
     const signal = raw[offset + 11];
 
-    // Mise à jour métriques
+    // Mise à jour métriques globales
     metricDist.innerHTML = dist + '<span class="metric-unit">cm</span>';
     metricSig.innerHTML  = signal + '<span class="metric-unit"></span>';
 
-    // Barre de signal
+    // Barre de signal global
     const pct = Math.min(signal, 100);
     signalBar.style.width = pct + '%';
     signalBar.className   = 'signal-bar-fill' +
       (pct > 70 ? ' high' : pct > 40 ? ' mid' : '');
 
-    // Détection mouvement
-    const mouvement = (statut === 1 || statut === 3) &&
-                       dist   > distMin              &&
-                       signal > seuilSignal;
+    // ── Mode Engineering : analyse par gate ──────────────
+    let alerteGate = false;
+    let gateMax    = -1;
+    let gateMaxVal = 0;
+
+    if (type === 0x02 && raw.length >= offset + 28) {
+      // Gates mobiles : positions offset+19 à offset+27
+      const gatesStr = [];
+      for (let i = 0; i <= 8; i++) {
+        const val = raw[offset + 19 + i];
+        gatesStr.push(val);
+
+        // Vérifie si une gate dans la plage utile dépasse le seuil
+        if (i >= GATE_MIN && i <= GATE_MAX && val > seuilSignal) {
+          alerteGate = true;
+          if (val > gateMaxVal) {
+            gateMaxVal = val;
+            gateMax    = i;
+          }
+        }
+      }
+
+      // Affiche les gates dans le log de façon lisible
+      if (rawLogCount <= 3) {
+        log(`Gates mob: [${gatesStr.join(', ')}]`, '');
+      }
+
+      // Met à jour l'affichage des gates
+      updateGates(gatesStr, gateMax);
+    }
+
+    // ── Décision d'alerte ────────────────────────────────
+    const maintenant = Date.now();
+
+    // En mode Engineering → utilise les gates
+    // En mode Normal → utilise le signal global
+    const mouvement = (statut === 1 || statut === 3) && (
+      type === 0x02
+        ? alerteGate
+        : (dist > distMin && signal > seuilSignal)
+    );
 
     if (mouvement) {
+      const info = type === 0x02
+        ? `gate ${gateMax} (${gateMaxVal})`
+        : `${dist}cm sig:${signal}`;
+
       radarStatus.textContent = dist;
       radarStatus.className   = 'radar-status alert';
       radarLabel.textContent  = 'ALERTE MOUVEMENT';
@@ -736,7 +812,7 @@
       if (!alertCooldown) {
         alertCooldown = true;
         if (soundToggle.checked) jouerBip();
-        log(`⚠ ALERTE — dist: ${dist}cm signal: ${signal}`, 'alert');
+        log(`⚠ ALERTE — ${info}`, 'alert');
         setTimeout(() => { alertCooldown = false; }, 3000);
       }
     } else {
@@ -784,9 +860,38 @@
     signalBar.style.width   = '0%';
   }
 
+  // ── Initialisation affichage gates ───────────────────────
+  const gatesContainer = document.getElementById('gatesContainer');
+  const gatesDisplay   = document.getElementById('gatesDisplay');
+
+  // Crée les 9 barres de gates
+  for (let i = 0; i <= 8; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'gate-bar' + (i < GATE_MIN || i > GATE_MAX ? ' ignored' : '');
+    bar.id = `gate${i}`;
+    const fill = document.createElement('div');
+    fill.className = 'gate-bar-fill';
+    fill.style.height = '0%';
+    bar.appendChild(fill);
+    gatesDisplay.appendChild(bar);
+  }
+
+  function updateGates(gatesValues, gateMax) {
+    gatesContainer.style.display = 'block';
+    for (let i = 0; i <= 8; i++) {
+      const bar  = document.getElementById(`gate${i}`);
+      const fill = bar.querySelector('.gate-bar-fill');
+      const pct  = Math.min(gatesValues[i], 100);
+      fill.style.height = pct + '%';
+      bar.className = 'gate-bar' +
+        (i < GATE_MIN || i > GATE_MAX ? ' ignored' : '') +
+        (i === gateMax ? ' active' : '');
+    }
+  }
+
   // Initialisation
   log('Application prête — Chrome requis pour BLE', 'info');
-  log(`Seuil signal: ${seuilSignal} | Dist min: ${distMin}cm`, '');
+  log(`Gates actives: ${GATE_MIN} à ${GATE_MAX}`, '');
 </script>
 </body>
 </html>
