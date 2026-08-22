@@ -853,13 +853,13 @@
         gatesStr.push(val);
 
         if (i >= GATE_MIN && i <= GATE_MAX) {
-          // Utilise le seuil du radar * facteur pour filtrer le bruit
-          // Facteur 1.5 = doit dépasser 150% du seuil configuré
+          // Facteur plus élevé pour les gates lointaines (plus de bruit)
+          const facteur = i >= 6 ? facteurSeuil * 1.5 : facteurSeuil;
           const seuil = seuilsCharges && seuilsGatesMob[i] !== null
-            ? Math.round(seuilsGatesMob[i] * facteurSeuil)
+            ? Math.round(seuilsGatesMob[i] * facteur)
             : seuilSignal;
 
-          if (val > seuil) {
+          if (val > seuil && seuil < 100) { // ignore les gates désactivées (seuil=100)
             alerteGate = true;
             if (val > gateMaxVal) {
               gateMaxVal = val;
