@@ -774,9 +774,13 @@
     const dist   = raw[offset + 9] | (raw[offset + 10] << 8);
     const signal = raw[offset + 11];
 
+    // Engineering détecté par la TAILLE (45b) et non par le type
+    // Ce firmware utilise type=0x01 pour les deux modes
+    const isEngineering = (raw.length >= offset + 28);
+
     // Log toutes les 30 trames
     if (rawLogCount % 30 === 0) {
-      log(`type:0x${type.toString(16)} statut:${statut} dist:${dist}cm sig:${signal}`, '');
+      log(`type:0x${type.toString(16)} eng:${isEngineering} statut:${statut} dist:${dist}cm sig:${signal}`, '');
     }
     rawLogCount++;
 
@@ -795,7 +799,7 @@
     let gateMax    = -1;
     let gateMaxVal = 0;
 
-    if (type === 0x02 && raw.length >= offset + 28) {
+    if (isEngineering) {
       // Gates mobiles : positions offset+19 à offset+27
       const gatesStr = [];
       for (let i = 0; i <= 8; i++) {
@@ -813,7 +817,7 @@
       }
 
       // Affiche les gates dans le log de façon lisible
-      if (rawLogCount <= 3) {
+      if (rawLogCount <= 8) {
         log(`Gates mob: [${gatesStr.join(', ')}]`, '');
       }
 
@@ -824,10 +828,8 @@
     // ── Décision d'alerte ────────────────────────────────
     const maintenant = Date.now();
 
-    // En mode Engineering → utilise les gates
-    // En mode Normal → utilise le signal global
     const mouvement = (statut === 1 || statut === 3) && (
-      type === 0x02
+      isEngineering
         ? alerteGate
         : (dist > distMin && signal > seuilSignal)
     );
