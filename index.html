@@ -496,11 +496,12 @@
   <footer>Chrome Android requis · HTTPS</footer>
 
 <script>
-  // ── UUIDs LD2410C confirmés via nRF Connect ────────────────
-  const SERVICE_UUID = '0000ae00-0000-1000-8000-00805f9b34fb';
-  const CHAR_WRITE   = '0000ae01-0000-1000-8000-00805f9b34fb'; // WRITE NO RESPONSE
-  const CHAR_NOTIFY  = '0000ae02-0000-1000-8000-00805f9b34fb'; // NOTIFY
-  const PASSWORD     = [0x48, 0x69, 0x4c, 0x69, 0x6e, 0x6b];  // "HiLink"
+  // ── UUIDs LD2410C confirmés via code source Tasmota ───────
+  const SERVICE_UUID = '0000fff0-0000-1000-8000-00805f9b34fb'; // FFF0
+  const CHAR_NOTIFY  = '0000fff1-0000-1000-8000-00805f9b34fb'; // FFF1 - NOTIFY
+  const CHAR_WRITE   = '0000fff2-0000-1000-8000-00805f9b34fb'; // FFF2 - WRITE
+  // Commande activation BLE notifications (0xA8) + password "HiLink"
+  const PASSWORD_HEX = [0x48, 0x69, 0x4c, 0x69, 0x6e, 0x6b]; // "HiLink"
 
   // ── État ──────────────────────────────────────────────────
   let device    = null;
@@ -576,35 +577,72 @@
 
       device = await navigator.bluetooth.requestDevice({
         filters: [{ namePrefix: 'HLK-LD2410' }],
-        optionalServices: [SERVICE_UUID]
+        optionalServices: [
+          SERVICE_UUID,
+          '0000ae00-0000-1000-8000-00805f9b34fb' // fallback AE00
+        ]
       });
 
       device.addEventListener('gattserverdisconnected', onDisconnected);
-
       server = await device.gatt.connect();
       log('GATT connecté', 'info');
 
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      log('Service AE00 trouvé ✓', 'info');
-
-      // Authentification via AE01 (WRITE NO RESPONSE)
+      // Essai service FFF0 d'abord
+      let service;
       try {
-        const writeChar = await service.getCharacteristic(CHAR_WRITE);
-        await writeChar.writeValueWithoutResponse(new Uint8Array(PASSWORD));
-        log('Authentifié (HiLink)', 'info');
-      } catch (e) {
-        log('Auth ignorée : ' + e.message, '');
+        service = await server.getPrimaryService(SERVICE_UUID);
+        log('Service FFF0 trouvé ✓', 'info');
+      } catch(e) {
+        log('FFF0 non trouvé, essai AE00...', '');
+        service = await server.getPrimaryService(
+          '0000ae00-0000-1000-8000-00805f9b34fb'
+        );
+        log('Service AE00 trouvé ✓', 'info');
       }
 
-      // Abonnement notifications via AE02
-      const notifChar = await service.getCharacteristic(CHAR_NOTIFY);
+      // Caractéristique Write
+      let writeChar;
+      try {
+        writeChar = await service.getCharacteristic(CHAR_WRITE);
+        log('Write FFF2 trouvé ✓', 'info');
+      } catch(e) {
+        writeChar = await service.getCharacteristic(
+          '0000ae01-0000-1000-8000-00805f9b34fb'
+        );
+        log('Write AE01 trouvé ✓', 'info');
+      }
+
+      // Caractéristique Notify
+      let notifChar;
+      try {
+        notifChar = await service.getCharacteristic(CHAR_NOTIFY);
+        log('Notify FFF1 trouvé ✓', 'info');
+      } catch(e) {
+        notifChar = await service.getCharacteristic(
+          '0000ae02-0000-1000-8000-00805f9b34fb'
+        );
+        log('Notify AE02 trouvé ✓', 'info');
+      }
+
+      // Abonnement notifications
       await notifChar.startNotifications();
       notifChar.addEventListener('characteristicvaluechanged', onData);
+      log('Notifications activées ✓', 'info');
 
-      setConnStatus('connected');
-      btnDisconnect.disabled = false;
-      btnConnect.disabled    = true;
-      log('Réception active sur AE02 ✓', 'info');
+      // Commande 0xA8 = activation BLE notify avec password HiLink
+      // Format : FD FC FB FA [len_lo] [len_hi] [cmd] 00 [data...] 04 03 02 01
+      const cmdA8 = buildCmd(0xA8, PASSWORD_HEX);
+      try {
+        await writeChar.writeValueWithoutResponse(cmdA8);
+        log('Commande A8 (BLE notify) envoyée ✓', 'info');
+      } catch(e) {
+        try {
+          await writeChar.writeValue(cmdA8);
+          log('Commande A8 envoyée (write) ✓', 'info');
+        } catch(e2) {
+          log('Commande A8 ignorée : ' + e2.message, '');
+        }
+      }
 
     } catch (err) {
       log('Erreur : ' + err.message, 'alert');
@@ -628,26 +666,51 @@
   }
 
   // ── Traitement des données ────────────────────────────────
-  let rawLogCount = 0; // limite l'affichage brut aux 5 premières trames
+  // ── Construction commandes protocole Hi-Link ─────────────
+  function buildCmd(cmd, data = []) {
+    const len = 2 + data.length;
+    const buf = [
+      0xFD, 0xFC, 0xFB, 0xFA,  // header config
+      len & 0xFF, (len >> 8) & 0xFF, // longueur
+      cmd, 0x00,                // commande
+      ...data,                  // données
+      0x04, 0x03, 0x02, 0x01   // footer config
+    ];
+    return new Uint8Array(buf);
+  }
+
+  let rawLogCount = 0;
 
   function onData(event) {
-    const data = new Uint8Array(event.target.value.buffer);
+    const raw  = new Uint8Array(event.target.value.buffer);
 
-    // Affiche les 5 premières trames brutes pour diagnostic
-    if (rawLogCount < 5) {
+    // Affiche les 3 premières trames brutes pour diagnostic
+    if (rawLogCount < 3) {
       rawLogCount++;
-      const hex = Array.from(data).map(b => b.toString(16).padStart(2,'0')).join(' ');
-      log(`Trame brute (${data.length}b): ${hex}`, 'info');
+      const hex = Array.from(raw).map(b => b.toString(16).padStart(2,'0')).join(' ');
+      log(`Trame (${raw.length}b): ${hex}`, 'info');
+    }
+
+    // Le buffer BLE est décalé d'1 octet par rapport à l'UART
+    // buf[0] = longueur, buf[1..] = trame F4 F3 F2 F1 ...
+    // OU la trame commence directement par F4 selon le firmware
+
+    let data = raw;
+    let offset = 0;
+
+    // Détecte si le premier octet est la longueur (pas F4)
+    if (raw[0] !== 0xF4 && raw[1] === 0xF4) {
+      offset = 1; // buffer décalé d'1 octet
     }
 
     // Vérifie le header F4 F3 F2 F1
-    if (data.length < 12) return;
-    if (data[0] !== 0xF4 || data[1] !== 0xF3 ||
-        data[2] !== 0xF2 || data[3] !== 0xF1) return;
+    if (raw.length < offset + 12) return;
+    if (raw[offset]   !== 0xF4 || raw[offset+1] !== 0xF3 ||
+        raw[offset+2] !== 0xF2 || raw[offset+3] !== 0xF1) return;
 
-    const statut = data[8];
-    const dist   = data[9] | (data[10] << 8); // little endian
-    const signal = data[11];
+    const statut = raw[offset + 8];
+    const dist   = raw[offset + 9] | (raw[offset + 10] << 8);
+    const signal = raw[offset + 11];
 
     // Mise à jour métriques
     metricDist.innerHTML = dist + '<span class="metric-unit">cm</span>';
