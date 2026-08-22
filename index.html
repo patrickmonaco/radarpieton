@@ -703,6 +703,16 @@
 
       await sendCmd(buildCmd(0xFF, [0x01, 0x00])); // enter config
       log('Config ouverte ✓', 'info');
+
+      // Lecture des paramètres (seuils par gate)
+      try {
+        await writeChar.writeValueWithoutResponse(buildCmd(0x61, []));
+        log('Lecture paramètres envoyée ✓', 'info');
+      } catch(e) {
+        try { await writeChar.writeValue(buildCmd(0x61, [])); } catch(e2) {}
+      }
+      await new Promise(r => setTimeout(r, 600));
+
       await sendCmd(buildCmd(0x62, [0x01, 0x00])); // engineering ON
       log('Engineering ON ✓', 'info');
       await sendCmd(buildCmd(0xFE, []));            // exit config
@@ -737,6 +747,11 @@
   }
 
   // ── Traitement des données ────────────────────────────────
+  // ── Seuils par gate récupérés du radar ───────────────────
+  let seuilsGatesMob = new Array(9).fill(null); // null = non chargé
+  let seuilsGatesSta = new Array(9).fill(null);
+  let seuilsCharges  = false;
+
   // ── Paramètres gates ─────────────────────────────────────
   const GATE_MIN = 2; // ignore gates 0 et 1 (< 1.5m)
   const GATE_MAX = 8; // inclut gates 7 et 8 (jusqu'à 6m)
@@ -752,8 +767,27 @@
       log(`Trame (${raw.length}b): ${hex}`, 'info');
     }
 
-    // Détecte le décalage d'1 octet
-    let offset = 0;
+    // ── Trame de configuration (FD FC FB FA) ─────────────
+    if (raw[offset] === 0xFD && raw[offset+1] === 0xFC &&
+        raw[offset+2] === 0xFB && raw[offset+3] === 0xFA) {
+
+      const cmd = raw[offset + 6];
+      if (cmd === 0x61 && raw.length >= offset + 33) {
+        // Réponse Read Parameters
+        // buf[15..23] = moving sensitivity gates 0-8
+        // buf[24..32] = static sensitivity gates 0-8
+        for (let i = 0; i <= 8; i++) {
+          seuilsGatesMob[i] = raw[offset + 15 + i];
+          seuilsGatesSta[i] = raw[offset + 24 + i];
+        }
+        seuilsCharges = true;
+        log(`Seuils mob: [${seuilsGatesMob.join(', ')}]`, 'info');
+        log(`Seuils sta: [${seuilsGatesSta.join(', ')}]`, '');
+      }
+      return; // trame config, pas de données radar
+    }
+
+    // ── Trame de données (F4 F3 F2 F1) ───────────────────
     if (raw[0] !== 0xF4 && raw[1] === 0xF4) offset = 1;
 
     if (raw.length < offset + 12) {
@@ -800,28 +834,34 @@
     let gateMaxVal = 0;
 
     if (isEngineering) {
-      // Gates mobiles : positions offset+19 à offset+27
       const gatesStr = [];
       for (let i = 0; i <= 8; i++) {
         const val = raw[offset + 19 + i];
         gatesStr.push(val);
 
-        // Vérifie si une gate dans la plage utile dépasse le seuil
-        if (i >= GATE_MIN && i <= GATE_MAX && val > seuilSignal) {
-          alerteGate = true;
-          if (val > gateMaxVal) {
-            gateMaxVal = val;
-            gateMax    = i;
+        if (i >= GATE_MIN && i <= GATE_MAX) {
+          // Utilise le seuil du radar si disponible, sinon le slider
+          const seuil = seuilsCharges && seuilsGatesMob[i] !== null
+            ? seuilsGatesMob[i]
+            : seuilSignal;
+
+          if (val > seuil) {
+            alerteGate = true;
+            if (val > gateMaxVal) {
+              gateMaxVal = val;
+              gateMax    = i;
+            }
           }
         }
       }
 
-      // Affiche les gates dans le log de façon lisible
       if (rawLogCount <= 8) {
         log(`Gates mob: [${gatesStr.join(', ')}]`, '');
+        if (seuilsCharges) {
+          log(`Seuils:    [${seuilsGatesMob.join(', ')}]`, '');
+        }
       }
 
-      // Met à jour l'affichage des gates
       updateGates(gatesStr, gateMax);
     }
 
@@ -918,8 +958,27 @@
       const fill = bar.querySelector('.gate-bar-fill');
       const pct  = Math.min(gatesValues[i], 100);
       fill.style.height = pct + '%';
+
+      // Ligne de seuil
+      let threshold = bar.querySelector('.gate-threshold');
+      if (!threshold) {
+        threshold = document.createElement('div');
+        threshold.className = 'gate-threshold';
+        threshold.style.cssText = 'position:absolute;width:100%;height:2px;background:rgba(255,180,64,0.7);pointer-events:none';
+        bar.appendChild(threshold);
+      }
+
+      if (seuilsCharges && seuilsGatesMob[i] !== null) {
+        threshold.style.bottom = seuilsGatesMob[i] + '%';
+        threshold.style.display = 'block';
+      } else {
+        threshold.style.bottom = seuilSignal + '%';
+        threshold.style.display = 'block';
+      }
+
+      const ignored = i < GATE_MIN || i > GATE_MAX;
       bar.className = 'gate-bar' +
-        (i < GATE_MIN || i > GATE_MAX ? ' ignored' : '') +
+        (ignored ? ' ignored' : '') +
         (i === gateMax ? ' active' : '');
     }
   }
