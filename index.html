@@ -688,7 +688,17 @@
 
       await new Promise(r => setTimeout(r, 300));
 
-      // 4. Commandes Engineering + lecture paramètres
+      // 4. Authentification A8 (HiLink) - obligatoire pour recevoir des données
+      const cmdA8 = buildCmd(0xA8, PASSWORD_HEX);
+      try {
+        await writeChar.writeValueWithoutResponse(cmdA8);
+        log('A8 (HiLink) envoyée ✓', 'info');
+      } catch(e) {
+        try { await writeChar.writeValue(cmdA8); } catch(e2) {}
+      }
+      await new Promise(r => setTimeout(r, 800));
+
+      // 5. Commandes Engineering + lecture paramètres
       const sendCmd = async (cmd) => {
         try {
           await writeChar.writeValueWithoutResponse(cmd);
@@ -708,7 +718,7 @@
       } catch(e) {
         try { await writeChar.writeValue(buildCmd(0x61, [])); } catch(e2) {}
       }
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 1000));
 
       await sendCmd(buildCmd(0x62, [0x01, 0x00])); // engineering ON
       log('Engineering ON ✓', 'info');
