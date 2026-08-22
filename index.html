@@ -628,8 +628,17 @@
   }
 
   // ── Traitement des données ────────────────────────────────
+  let rawLogCount = 0; // limite l'affichage brut aux 5 premières trames
+
   function onData(event) {
     const data = new Uint8Array(event.target.value.buffer);
+
+    // Affiche les 5 premières trames brutes pour diagnostic
+    if (rawLogCount < 5) {
+      rawLogCount++;
+      const hex = Array.from(data).map(b => b.toString(16).padStart(2,'0')).join(' ');
+      log(`Trame brute (${data.length}b): ${hex}`, 'info');
+    }
 
     // Vérifie le header F4 F3 F2 F1
     if (data.length < 12) return;
