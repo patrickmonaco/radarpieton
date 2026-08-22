@@ -765,14 +765,14 @@
         const hex = Array.from(raw).map((b,i) => `[${i}]:${b.toString(16)}`).join(' ');
         log(`Réponse 0x61: ${hex}`, 'info');
 
-        // Structure réponse 0x61 confirmée par analyse :
-        // [10]:aa [11]:max_mov_gate [12]:max_sta_gate [13]:no_one_dur_lo [14]:no_one_dur_hi
-        // [15..23] = moving sensitivity gates 0-8
-        // [24..32] = static sensitivity gates 0-8
-        if (raw.length >= 33) {
+        // Structure réponse 0x61 confirmée par analyse octet par octet :
+        // [11]=max_mov_gate [12]=max_sta_gate [13]=no_one_dur
+        // [14..22] = moving sensitivity gates 0-8  ← confirmé
+        // [23..31] = static sensitivity gates 0-8
+        if (raw.length >= 32) {
           for (let i = 0; i <= 8; i++) {
-            seuilsGatesMob[i] = raw[15 + i];
-            seuilsGatesSta[i] = raw[24 + i];
+            seuilsGatesMob[i] = raw[14 + i];
+            seuilsGatesSta[i] = raw[23 + i];
           }
           seuilsCharges = true;
           log(`Max gates: mov=${raw[11]} sta=${raw[12]} no_one=${raw[13]}s`, '');
