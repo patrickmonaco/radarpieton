@@ -768,37 +768,41 @@
     }
 
     // ── Trame de configuration (FD FC FB FA) ─────────────
-    if (raw[offset] === 0xFD && raw[offset+1] === 0xFC &&
-        raw[offset+2] === 0xFB && raw[offset+3] === 0xFA) {
+    if (raw[0] === 0xFD && raw[1] === 0xFC &&
+        raw[2] === 0xFB && raw[3] === 0xFA) {
 
-      const cmd = raw[offset + 6];
-      if (cmd === 0x61 && raw.length >= offset + 33) {
-        // Réponse Read Parameters
-        // buf[15..23] = moving sensitivity gates 0-8
-        // buf[24..32] = static sensitivity gates 0-8
+      const cmd = raw[6];
+      if (cmd === 0x61 && raw.length >= 33) {
         for (let i = 0; i <= 8; i++) {
-          seuilsGatesMob[i] = raw[offset + 15 + i];
-          seuilsGatesSta[i] = raw[offset + 24 + i];
+          seuilsGatesMob[i] = raw[15 + i];
+          seuilsGatesSta[i] = raw[24 + i];
         }
         seuilsCharges = true;
         log(`Seuils mob: [${seuilsGatesMob.join(', ')}]`, 'info');
         log(`Seuils sta: [${seuilsGatesSta.join(', ')}]`, '');
+      } else {
+        log(`ACK cmd:0x${cmd.toString(16)}`, '');
       }
-      return; // trame config, pas de données radar
+      rawLogCount++;
+      return;
     }
 
     // ── Trame de données (F4 F3 F2 F1) ───────────────────
+    // Détecte le décalage d'1 octet
+    let offset = 0;
     if (raw[0] !== 0xF4 && raw[1] === 0xF4) offset = 1;
 
     if (raw.length < offset + 12) {
-      if (rawLogCount < 5) log(`Trame trop courte: ${raw.length}`, 'alert');
+      if (rawLogCount < 8) log(`Trame courte: ${raw.length}b`, 'alert');
       rawLogCount++;
       return;
     }
 
     if (raw[offset]   !== 0xF4 || raw[offset+1] !== 0xF3 ||
         raw[offset+2] !== 0xF2 || raw[offset+3] !== 0xF1) {
-      if (rawLogCount < 5) log(`Header invalide offset:${offset} [${raw[0].toString(16)},${raw[1].toString(16)}]`, 'alert');
+      if (rawLogCount < 8) {
+        log(`Header inconnu: [${raw[0].toString(16)},${raw[1].toString(16)}]`, 'alert');
+      }
       rawLogCount++;
       return;
     }
@@ -807,14 +811,11 @@
     const statut = raw[offset + 8];
     const dist   = raw[offset + 9] | (raw[offset + 10] << 8);
     const signal = raw[offset + 11];
-
-    // Engineering détecté par la TAILLE (45b) et non par le type
-    // Ce firmware utilise type=0x01 pour les deux modes
     const isEngineering = (raw.length >= offset + 28);
 
     // Log toutes les 30 trames
     if (rawLogCount % 30 === 0) {
-      log(`type:0x${type.toString(16)} eng:${isEngineering} statut:${statut} dist:${dist}cm sig:${signal}`, '');
+      log(`eng:${isEngineering} statut:${statut} dist:${dist}cm sig:${signal}`, '');
     }
     rawLogCount++;
 
